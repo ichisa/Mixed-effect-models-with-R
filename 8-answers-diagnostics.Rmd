@@ -1,0 +1,342 @@
+---
+title: "Exercises Day 8 - Diagnostics of MEM"
+author: "Elisa Schneider"
+date: "17 July 2019"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+knitr::opts_chunk$set(message = FALSE)
+```
+
+From Crawly - The R Book 
+
+There are five fundamental assumptions of linear mixed-effects models:
+
+- Within-group errors are independent with mean zero and variance $\sigma^2$.
+- Within-group errors are independent of the random effects.
+- The random effects are normally distributed with mean zero and covariance matrix $\phi$.
+- The random effects are independent in different groups.
+- The covariance matrix does not depend on the group.
+
+From the lecture ba Arne, assumptions
+
+- the random effects u are normally and independently distributed among groups with mean=0 and variance described by G
+- the residual errors e are normally and independently distributed within a group with mean=0 and variance described by R
+- u and e are independent of each other: among groups, there are no correlations of errors.
+- the variances and covariance do not depend on group: they all have the same values in each group
+
+
+
+## Exercise 1: 
+### Re-do the analyses from yesterday for the data sets "farms" and "fertilizer". Use only the models that actually converged. 
+
+
+```{r}
+library(lme4)
+
+
+farms <- read.delim("farms.txt")
+str (farms)
+farms$farm <- factor(farms$farm)
+
+#Fit the model
+
+m1 <- lmer (size~N+(1|farm), data = farms)
+m2 <- lmer (size~N+(N|farm), data = farms)
+```
+
+In this case we see that the residuals are homogeniously distributted allong the fitted values. 
+
+### Inspect the ranefs? are the normally distributed?
+
+The command `ranef` returns the estimated random slope for each farm. We can do an histogram of the random slopes to see if they follow a normal distribution. 
+
+For the model with the random intercepts:
+
+```{r}
+
+ranef(m1)
+reffects.m1 <- ranef(m1)
+hist(reffects.m1$farm[,1], main="Dsitributin of random intercepts")
+
+```
+
+For the model containing random intercepts and random slopes:
+
+```{r}
+
+ranef(m2)
+reffects.m2 <- ranef(m2)
+
+par(mfrow=c(1,2))
+hist(reffects.m2$farm[,1], main="Random intercepts")
+hist(reffects.m2$farm[,2], main="Random slopes")
+
+```
+
+All the histograms are not far from normality. However we can not see if the ditribution is *exactly* a normal distribution. We can use the *shapiro test for normality*. The null hypothesis for this test is that the distribution is normal, the alternative hypothesis is that the distribution is not normal. Si if owr data and model meet the assumptions, the test should be non significant. Let`s try:
+
+```{r}
+shapiro.test(reffects.m1$farm[,1])
+shapiro.test(reffects.m2$farm[,1])
+shapiro.test(reffects.m2$farm[,2])
+
+```
+
+Non of the results are signifficant so we meet the assumption that the distribution of the random effects is normal, or close enough to normal. 
+### Check distribution of residuals 
+
+There is another possibility to test normality, the *qqplot* 
+
+```{r}
+library(lattice)
+qqmath(m1) # qqmath() produces a qqplot of the model residuals, it requires that lattice() is loaded, this one looks good
+
+```
+
+When the data points are not far away from the line, this means that the residuals are normally distributed. 
+
+Wecan also check the residuals using the `plot.merMod` function (calling plot() on a lmer or lme model is usually enough)
+
+Plot the model allows to see how the residuals look like. 
+
+```{r}
+par(mfrow=c(1,2))
+plot(m1)
+plot(m2)
+```
+
+
+### Do you see any issues? 
+
+There is no visible trend for the residuals. They look homogeneous allong all the fitted values. So we have no big issues for this model. 
+
+We have a problem  with the model including the random intercept and random slope. The correlation between the two is equal to 1. This means we have convergence problems. We have not enough data to fit such a complex model. 
+
+### Different possibilities to plot the residuals
+
+```{r}
+plot(m1, resid(., type = "response") ~ N | farm, abline = 0) # for each farm
+ plot(m1, resid(., type = "response") ~ N, abline = 0) # just the overall residuals, there is no further predicto
+
+
+```
+
+The first plot makes one figure per farm, which allows us to see that the residuals are simmilar btw. farms. 
+
+The seccond plot is very simmilar to the one we did before but insted of normalized residuals vs fittet it is vs. N. This is usefull to see if the variance of the residuals increases with one or more of the predictors. 
+
+
+We could maybe think that the residuals change between farms. In order to test this we could use the  simulateResiduals function from the DHARMa package. This function simulates new data from the fitted model and calculates the residuals comparing the fitted data to the observed data.
+
+```{r}
+
+a<- DHARMa::simulateResiduals(m1)
+plot(a)
+
+```
+
+The Q-Q plot of the residuals shows that the the expected and observed values are linearly correlated. This model has not important deviations from the expected distribution.
+
+To detect deviations from uniformity of the predicted values, the functions also plots the residuals against the predicted values. In this plot it is possible to compare the distribution of the residuals of the data and the residuals of the predicted values. These two lines should match. In this case the predicted and simulated valuesdo not mach.
+
+### Example with the fertilizer experiment
+
+```{r}
+fertilizer <- read.delim("fertilizer.txt")
+```
+
+
+```{r}
+
+ mod.fertilizer <- lmer(root ~ week * fertilizer + (week||plant), fertilizer)
+# random intercept:
+ hist(ranef(mod.fertilizer)$plant[,1]) # looks good
+ shapiro.test(ranef(mod.fertilizer)$plant[,1]) # looks good
+# random slope: 
+ hist(ranef(mod.fertilizer)$plant[,2])
+
+ qqmath(mod.fertilizer) # qqmath() produces a qqplot of the model residuals, it requires that lattice() is loaded, this one not so good, but OK, bit of bother down in the left corner
+
+ plot(mod.fertilizer, resid(., type = "response") ~ week | fertilizer, abline = 0)
+ plot(mod.fertilizer, resid(., type = "response") ~ fitted(.) | fertilizer, abline = 0) # the residuals for "control" look funny 
+ plot(mod.fertilizer, resid(., type = "response") ~ week | plant, abline = 0)
+
+```
+
+## Exercise 2
+
+Load the data set "ovary": it describes the number of follicles over time for several female horses.
+
+Inspect the data with lattice() e.g., build a model following the recipe, check the variance components, ranefs() and residuals using plot() and DHARMa
+
+
+### Load the data, plot it and buid the model
+
+```{r}
+
+library(tidyr)
+library(dplyr)
+library(ggplot2)
+
+ovary <- read.delim("ovary.txt")
+head(ovary)
+ovary$Mare <- factor(ovary$Mare)
+
+ovary %>% ggplot(aes(x=Time, y=follicles, color=Mare))+
+  geom_point() +
+  facet_wrap(~Mare) + 
+  geom_smooth(method = "lm", se = FALSE)
+
+```
+
+
+Already by looking at the plot we see that the response is not really linear. It seems more like a response that oscilates with time. Therefore, a linear model is not optimal. But let`s try anyway to see what happens. 
+
+### Fit the mixed effect model 
+
+Implementing a Mixed Effects Model: 
+
+- spot the grouping in the data
+
+All the data comming from the same individual is clearlly correlated. The individual is a grouping factor. 
+
+- how many random effects are there in the data?
+
+The individual. 
+
+- if two or more, are they nested? Can you spot that from the data labeling, or if not, is there any reason to suspect nesting / crossing?
+
+There is only one 
+
+- define the deterministic part of the model, i.e. find the fixed effects incl. their interactions and potential quadratic / cubic etc. terms
+
+To keep it simple we will say that the number of follicles depend on time only with a linear relation. 
+
+
+- can you specify random slopes for one or all of the ranodm effects?
+
+Yes, we coul also allow a random slope for each individual . 
+
+```{r}
+m3 <- lmer (follicles ~ Time + (Time|Mare), data = ovary)
+
+```
+
+
+Now let`s inspect the model to see if we meet: 
+
+
+- are there problems with correlations between a random slope and random intercept AND/OR between multiple random effects? Correlations exactly -1 or +1
+- is a variance component very small compared to the rest of the others, or even exactly zero? 
+- are the random effects (ranef) normally distributed around a mean of zero? 
+- is this true for each of the levels of random effects when there is a complex random effects structure?
+- are there patterns in the residuals that may cause non-independence of the residual errors
+
+### We check one by one 
+
+- are there problems with correlations between a random slope and random intercept AND/OR between 
+multiple random effects? Correlations exactly -1 or +1
+```{r}
+summary(m3)
+```
+
+No problems with the correlation. The number is far from exactly -1 or 1. 
+
+- is a variance component very small compared to the rest of the others, or even exactly zero? 
+
+```{r}
+VarCorr(m3)
+```
+
+The variance of the grouping is smaller than the variance of the residuasls. Grouping does not explain much, this means, there is not a huge variance between individuals. The variance of the residuals may show that there is somthing more influencing points probably that is not in the model.
+
+However, all the variances are of the same order, so there is not a very big or very small variance component compared to the rest, so we have no problem here. 
+
+##### Are the random effects (ranef) normally distributed around a mean of zero? 
+
+```{r}
+
+par(mfcol=c(1,3))
+m3.f<- ranef(m3)
+
+hist(m3.f$Mare[,1])
+shapiro.test(m3.f$Mare[,1])
+```
+
+
+It is not perfectly normal. Still shapiro.test is non signifficant which means that we can not discard the null hypothesis that says that the data is normally distributed.  
+
+##### is this true for each of the levels of random effects when there is a complex random effects structure?
+
+Only one random effect
+
+##### are there patterns in the residuals that may cause non-independence of the residual errors
+
+```{r}
+par(mfcol=c(1,1))
+plot(m3)
+plot(m3, resid(.,scaled=TRUE)~fitted(.)|Mare, abline=0)
+
+a<- DHARMa::simulateResiduals(m3,  integerResponse = TRUE)
+plot(a)
+
+```
+
+The last two plots show some issues. In the seccond plot we can see that for some individuals the residuals show a pattern. This make us think that the response might not be linear. 
+
+The plot made by the DAHRMa package also shows some issues regarding the residuals. The residuals are not homogeneously distributed allong the residuals. 
+
+ The follicle number is a highly non-linear function of time, so a linear mixed effects model of the form ` m <- lmer(follicles ~ Time + (1|Mare), ovary) ` will have issues. 
+Ovary has a complex response to time
+
+
+## Exercise 4
+
+Load the data set "willowsex" which describes the sex ("female") of 10 randomly chosen willows ("subs") in six plots ("blocks") 
+under two different treatments (grazing yes = 1 and grazing no = 0, in variable "excl").
+
+- Inspect the data, build a model and check its variance components, random effects and residuals
+
+
+```{r}
+willow <- read.delim("willowsex.txt")
+
+```
+
+### Inspect the data
+
+
+```{r}
+head(willow)
+str(willow)
+```
+
+
+*excl* is the treatment
+*block* is the grouping
+So , I would be adding the number of females per plot willowsex: non-normal data
+
+It is hard to understand what is happening in this data, so here is a description of the experiment that was carried out:
+
+A 10 × 30 m large Exclusion cage prevents reideer grazing a plot of arctic tundra. Next to the excluded plot there is a large control area. This arrangement (block) is replicated 6 times. After 6 years we determine the sex of 10 randomly selected willow plants per treatment unit. Thus each plant is a subsample or pseudoreplicate, i.e. nested within the treatment exclosure. We have to inform the model that block is a random effect, which we are not really interested in, and that all measurements of the subsamples in the treatment effect are nested.
+
+The response is the sex of the willow, female 1 or male 0. We already see that this is really problematic. Our response will be far from a normal distributtion since it can only take two values. To tackle this problme we need generalized mixed effect models. 
+
+We can still give it a try
+
+
+```{r}
+m.willow <- lmer(female~excl+(1|block), data=willow)
+```
+
+```{r}
+r<- ranef(m.willow)
+
+plot(m.willow)
+
+```
+
+

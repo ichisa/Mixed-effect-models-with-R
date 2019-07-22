@@ -1,0 +1,213 @@
+---
+title: "Day 2 - Linear Models"
+author: "Elisa"
+date: "9 July 2019"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+1) The in-built data frame "women" includes the average heights and weights of 15 women aged 30 to 39. 
+
+- fit a linear model to these data. Choose the correct predictor and response.
+
+```{r}
+wdf <- women
+lm1 <- lm ( weight ~ height, data=wdf)
+```
+
+- prepare a scatterplot of the two variables and plot the predictions of the linear model along with the 95% confidence interval
+
+with ggplot
+
+```{r}
+
+library(ggplot2)
+ggplot(wdf, aes(x=height, y=weight))+
+    geom_point()+
+    geom_smooth(method=lm, se=TRUE)
+
+```
+ 
+ 
+ Or with basic R, which needs some more steps
+ 
+```{r}
+
+newheights <- data.frame (height = seq (from = min(wdf$height), to = max (wdf$height), by=1))
+newweights <- predict (lm1, newheights, se = TRUE)
+
+plot(wdf$height, wdf$weight)
+lines(newheights$height, newweights$fit)
+lines(newheights$height, newweights$fit + newweights$se.fit * 1.96, col="red", lty=2)
+lines(newheights$height, newweights$fit - newweights$se.fit * 1.96 , col= "red", lty=2)
+
+```
+ 
+ - inspect the summary() of the model and make sure you understand each single bit of it
+ 
+```{r}
+summary(lm1)
+```
+ 
+- run standard diagnostics and check the model assumptions. Is there anything problematic?
+
+```{r}
+plot(lm1)
+```
+
+MAin issue: the residuals are not randomly distributed. They have a pattern which may suggest that the linear model is not the correct model for this data. 
+
+##Exercise 2
+
+Include a quadratic term in the model structure and plot the new model predictions with the 95% confidence interval. 
+- Is this model meeting the assumptions of a linear model better than the previous model?
+- Compare the two models diagnostics: does the quadratic-term-model fix all the problems?
+
+```{r}
+
+lm2 <- lm( weight ~ height + I(height^2), data=wdf)
+```
+
+Plot the model
+
+```{r}
+newweights2 <- predict(lm2, newheights, se=TRUE)
+
+plot(wdf$height, wdf$weight)
+lines(newheights$height, newweights2$fit)
+lines(newheights$height, newweights2$fit + newweights$se.fit * 1.96, col="red", lty=2)
+lines(newheights$height, newweights2$fit - newweights$se.fit * 1.96 , col= "red", lty=2)
+
+```
+
+
+## Exercise 3
+
+Extract the design matrix with model.matrix(), the error vector with residuals(), the predicted values with fitted(), 
+the beta vector with coef(), the residual variance by squaring the residual standdard error, the variance-covariance matrix
+of the parameters with vcov(). What would cov2cor(vcov()) do?
+
+#### Model matrix: shows the predictors we are using
+
+```{r}
+
+model.matrix(lm2)
+
+```
+
+#### Error vector with residual:
+
+```{r}
+residuals(lm2)
+```
+
+#### Beta vector: vector with the coeficients:
+
+```{r}
+coef(lm2)
+```
+
+#### Variance covariance matrix: 
+
+```{r}
+vcov(lm1)
+vcov(lm2)
+```
+
+What does this mean?
+Some info can be found in this link:
+
+(https://stats.stackexchange.com/questions/93303/variance-covariance-matrix-interpretation)
+
+This matrix displays estimates of the variance and covariance between the regression coefficients. In particular, for your design matrix X, and an estimate of the variance, $\sigma^{2}$, your displayed matrix is $\sigma^{2} (X'X)-1$.
+
+The diagonal entries are the variance of the regression coefficients and the off-diagonals are the covariance between the corresponding regression coefficients.
+
+#### What would cov2cor(vcov()) do? 
+
+As far as assumptions go, apply the cov2cor() function to your variance-covariance matrix. This function will convert the given matrix to a correlation matrix. You wil get estimates of the correlations between the regression coefficients. Hint: for this matrix, each of the correlations will have large magnitudes.
+
+To say something about the model in particular, we need point estimates of the regression coefficients to say anything further.
+
+Running down the main diagonal of the variance-covariance matrix are the variances of the sampling distributions of your parameter estimates (i.e., $\beta_{j}$ 's). Thus, taking the square roots of those values yields the standard errors that are reported with statistical output:
+
+```{r}
+
+SEs   = sqrt(diag(vcov(lm2)))
+SEs
+```
+
+These are used to form confidence intervals and test hypotheses about your betas.
+
+The off-diagonal elements would be 0 if all variables were orthogonal, but your values are far from 0. Using the cov2cor() function, or standardizing the covariances by the square roots of the constituent variable variances reveals the correlation of the predictors (r). If you have substantial multicollinearity, this makes your standard errors much larger than they would otherwise be.
+
+```{r}
+cov2cor(vcov(lm2))
+```
+
+Some more info about multicolinearity (https://en.wikipedia.org/wiki/Multicollinearity)
+
+## Exercise 4
+
+Use the various matrices and the procedure from the lecture note to produce a plot of the predicted 
+values and the prediction interval around it.
+
+#### First create the design matrix with the new values
+
+```{r}
+design.matrix <- as.matrix(cbind( rep(1, length(newheights)), newheights, newheights^2))
+colnames(design.matrix)[1] <- "intercept "
+design.matrix
+```
+
+#### Multiply the design matrx by the coeffitients 
+
+The model: 
+$Y = X \beta + \epsilon$
+
+The predictions
+
+```{r}
+#Matrix multiplication is %*%
+
+predict.vector <- design.matrix %*% coef(lm2)
+```
+
+ c) extract the variance-covariance matrix of the parameters and calculate XVX' 
+
+
+
+```{r}
+beta.covar.matrix <- vcov(lm2)
+XVX <- design.matrix %*% beta.covar.matrix %*% t(design.matrix)
+XVX
+```
+This matrix is the variance covariance of the error. The diagonal has the variance of each point. 
+
+
+My question is wyh this operation here:
+
+![](capture.png)
+
+```{r}
+low.confint <- (-1) * sqrt(diag(XVX)) * 1.96
+high.confint <- sqrt(diag(XVX)) * 1.96
+
+plot(women$weight ~ women$height, xlab = "Height (in)", ylab = "Weight (lb)", main = "Women aged 30-39")
+lines(design.matrix[,2], predict.vector, col = "red")
+lines(design.matrix[,2], predict.vector + low.confint, col = "grey")
+lines(design.matrix[,2], predict.vector + high.confint, col = "grey")
+
+```
+
+```{r}
+
+
+SEs   = sqrt(diag(vcov(lm1)))
+SEs
+
+```
+

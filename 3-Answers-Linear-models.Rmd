@@ -1,0 +1,175 @@
+---
+title: "Day 3 - Exercises"
+author: "Elisa"
+date: "19 February 2019"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+
+
+General advice: do all exercises today and on all the following days in R-Markdown and save your answers 
+as knitted html files. This will let you practice the procedure you will need during the exam!
+
+#Problem 1
+
+The in-built data frame "women" includes the average heights and weights of 15 women aged 30 to 39. 
+
+- fit a linear model to these data. Choose the correct predictor and response. Should you use the command
+aov() or lm()? 
+- prepare a scatterplot of the two variables and plot the predictions of the linear model along with the 95% confidence interval
+- inspect the summary() of the model and make sure you understand each single bit of it
+- run standard diagnostics and check the model assumptions. Is there anything problematic?
+- plot your independent variable (x-axis) against residuals (y-axis) and include a horizontal line h = 0. What do you see?
+- what is the major issue with this model, if any?
+
+
+```{r}
+data(women)
+w <- women
+lm1 <- lm(weight ~height, data=w)
+
+summary(lm1, correlation=TRUE)
+
+newdata <- data.frame(height=seq(from = min(w$height), to = max(w$height), by=1))
+predictions <- predict(lm1, newdata, se.fit = TRUE)
+plot(w$height, w$weight, xlab="height", ylab = "weight")
+lines(newdata$height, predictions$fit)
+lines(newdata$height, predictions$fit+predictions$se.fit*1.96, lty=3, col="red")
+lines(newdata$height, predictions$fit-predictions$se.fit*1.96, lty=3, col="red")
+legend("bottomright", legend=c("data", "model", "95% confidence interval"), pch=c("o", NA, NA), lty=c(NA, 1,2), col=c("black","black", "red" ))
+```
+
+Summary of the model
+
+MEan square error: estimates the error term of the linear model
+-Sum of squares (SS): sum of residuals
+-Mean squares (MS): Sum of squares divided by degrees of freedom
+-Mean square error is the square root of the MS
+
+Adjusted r square: R square adjusted by the number of predictors. If you add more parameters the model will increase. Then, if the model does not increase more than what is expected by chance just because of adding one more parameter, the r adjusted decreses
+
+-F statistic: value of the statistic of the F distr+ibution use to calculate the p value. This pvalue indicates is the model explains the data significantly. 
+
+Assumptions of the model
+
+```{r}
+plot(w$height, lm1$residuals)
+abline(a=0, b=0)
+```
+```{r}
+par(mfrow=c(2,2))
+plot(lm1)
+```
+
+The residuals have a clear pattern. Which is a proble, violates assumtion of radom residuals. 
+
+#Problem 2
+
+Include a quadratic term in the model structure and plot the new model predictions with the 95% confidence interval. 
+- Is this model meeting the assumptions of a linear model better than the previous model?
+- Compare the two models diagnostics: does the quadratic-term-model fix all the problems?
+
+```{r}
+lm2 <- lm(weight ~height+I(height^2), data=w)
+
+predictions.lm2 <- predict(lm2, newdata, se.fit = TRUE)
+
+plot(w$height, w$weight)
+lines(newdata$height, predictions.lm2$fit)
+lines(newdata$height, predictions.lm2$fit+1.96*predictions.lm2$se.fit, col="red", lty=2)
+lines(newdata$height, predictions.lm2$fit-1.96*predictions.lm2$se.fit, col="red", lty=2)
+legend("bottomright", legend=c("data", "model", "95% cofidence interval"), pch=c("o", NA, NA), lty=c(NA, 1,2), col=c("black","black", "red" ))
+```
+
+```{r}
+par(mfrow=c(2,2))
+plot(lm2)
+```
+
+diagnostics have improved quite a bit, but there are still issues with patterns in the residuals. Knowing what one knows (or not) about allometric length - biomass relationships, maybe one should include a another non-linear term. Note that there are also some extreme values identified in the fourth diagnostic plot. That is not very surprising with only 15 data points. 
+
+#Problem 3
+
+
+load and explore the data "regrowth1A" you find on ILIAS.  
+
+Experiment details: it concerns an experiment on the impact of grazing on the fruit production of a biennial plant. Forty plants were allocated to two treatments, grazed and ungrazed, and the grazed plants were exposed to rabbits during the first two weeks of stem elongation. They were then protected from subsequent grazing by the erection of a fence and allowed to regrow. At the end of the growing season, the fruit production (dry weight in milligrams) was recorded on each of the 40 plants. There are two columns in the dataset: Grazing has 2 levels (Grazed, with rabbits), (Ungrazed, no rabbits) and Fruit gives the weight of fruits produced by a plant (dry weight in milligrams).
+
+- Make a plot to visualize the relationship between these two variables.
+- Use aov() and lm() to disentangle the effect of the independent variable on the response. 
+  What is the difference between the two outputs when you call summary()?  
+- Interpret the results you just obtained. What do you conclude?
+
+```{r}
+regrowth1A <- read.delim("regrowth1A.txt")
+
+boxplot(Fruit~Grazing, data=regrowth1A)
+
+lm.grazing <- lm(Fruit~Grazing, data=regrowth1A)
+aov.grazing <- aov(Fruit~Grazing, data=regrowth1A)
+
+summary(lm.grazing)
+summary(aov.grazing)
+```
+
+summary(aov()) gives an F-test for overall effect of independent variable  while summary(lm()) gives a t-test for difference in means because you called lm() on a categorial variable otherwise identical results: analyis of variance and linear regression are two aspects of the Linear Model
+
+#Problem 4
+
+import and inspect the data "regrowth1B". These are the same data as "regrowth1A" you now see a third column "Root". This variable contains the root diameter of each plant from the Grazed and Ungrazed treatment.
+- explore graphically the pairwise relations between each of the three variables
+- fit a proper statistical procedure which takes the data structure into account 
+  Run model diagnostics and plot the predictions of the model.
+- Interprete the results. What do you conclude? Does the conclusion differ from 3) above and why?
+- Could this have been resolved with a Mixed Effects Model? If yes, what variable would you specify 
+  for the random effect? If no, why not?
+
+```{r}
+regrowth1B <- read.delim("~/mixed effect models/day3/regrowth1B.txt")
+plot(regrowth1B)
+plot(regrowth1B$Root, regrowth1B$Fruit, col=c("blue", "green") [as.numeric(regrowth1B$Grazing)])
+
+lm3 <- lm(Fruit~Root+Grazing, data=regrowth1B)
+summary(lm3)
+
+ggplot(regrowth1B, aes(x=Root, y=Fruit, group=Grazing))+
+  geom_point(aes(color=Grazing)) +
+  scale_color_manual(values=c("#999999", "#E69F00"))
+
+ggplot(regrowth1B, aes(x=Root, y=Fruit, group=Grazing))+
+  geom_point(aes(color=Grazing)) +
+  scale_color_manual(values=c("darkgreen", "darkred"))
+
+
+```
+```{r}
+newdata.g <- seq(from = min(regrowth1B$Root[regrowth1B$Grazing=="Grazed"]), to = max(regrowth1B$Root[regrowth1B$Grazing=="Grazed"]), by=1)
+newfactor.g <-rep("Grazed", length(newdata.g))
+
+newdata.ung <- seq(from = min(regrowth1B$Root[regrowth1B$Grazing=="Ungrazed"]), to = max(regrowth1B$Root[regrowth1B$Grazing=="Ungrazed"]), by=1)
+newfactor.ung <-rep("Ungrazed", length(newdata.ung))
+
+newdata.lm3 <- data.frame(Root=c(newdata.g, newdata.ung), Grazing = c(newfactor.g, newfactor.ung))
+
+predictions.lm3 <- predict(lm3, newdata = newdata.lm3, se.fit = TRUE , type = "response")
+
+plot(regrowth1B$Root, regrowth1B$Fruit, col=regrowth1B$Grazing)
+lines(newdata.lm3$Root[newdata.lm3$Grazing=="Grazed"], predictions.lm3$fit[newdata.lm3$Grazing=="Grazed"])
+lines(newdata.lm3$Root[newdata.lm3$Grazing=="Grazed"], predictions.lm3$fit[newdata.lm3$Grazing=="Grazed"]+1.96*predictions.lm3$se.fit[newdata.lm3$Grazing=="Grazed"], lty=2)
+lines(newdata.lm3$Root[newdata.lm3$Grazing=="Grazed"], predictions.lm3$fit[newdata.lm3$Grazing=="Grazed"]-1.96*predictions.lm3$se.fit[newdata.lm3$Grazing=="Grazed"], lty=2)
+
+
+lines(newdata.lm3$Root[newdata.lm3$Grazing=="Ungrazed"], predictions.lm3$fit[newdata.lm3$Grazing=="Ungrazed"], col="red")
+lines(newdata.lm3$Root[newdata.lm3$Grazing=="Ungrazed"], predictions.lm3$fit[newdata.lm3$Grazing=="Ungrazed"]+1.96*predictions.lm3$se.fit[newdata.lm3$Grazing=="Ungrazed"], lty=2, col="red")
+lines(newdata.lm3$Root[newdata.lm3$Grazing=="Ungrazed"], predictions.lm3$fit[newdata.lm3$Grazing=="Ungrazed"]-1.96*predictions.lm3$se.fit[newdata.lm3$Grazing=="Ungrazed"], lty=2, col="red")
+
+```
+
+Grazing NEGATIVELY affects fruit production. Root is confounded with the grazing treatment (for some reason, 
+larger plants ended up in the Grazed part. This is a bad experimental planning. Predictior variables were not cleanly separated.
+
+No. There are no measurements repeated within an experimental unit. In each grazing treatment, only one plant measurement is reported, so the data are independent of each other. This is likely a waste of effort. Manipulating grazing by rabbits requires fencing off a larger area than one single plant occupies (or would you like to squeeze one rabbit into the space a single dandelion needs? Good luck discussing that with your Ethics commitee) so oen could (should?) have measured more plants per plot and than run a Mixed Effects Model.

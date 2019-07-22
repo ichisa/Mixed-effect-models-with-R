@@ -1,0 +1,591 @@
+---
+title: "Exercise Day 7"
+author: "Elisa"
+date: "15 July 2019"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+knitr::opts_chunk$set(message = FALSE)
+knitr::opts_chunk$set(warning  = FALSE)
+
+```
+
+# Exercise 1
+
+### Plots 
+
+Load the data set "farms.txt". In it, the plant size ("size") of plants has been several times 5 times on each of 24 sites ("farms"). At the same spot the nitrogen concentration in the soil has been recorded ("N"). The question is, how plant size changes as nitrogen concentration changes. 
+You analysed these data last week with a repeated measurements ANOVA.
+
+```{r}
+farms <- read.delim("farms.txt")
+head(farms)
+```
+
+Try some plots to check how the data looks like using ggplot:
+
+```{r}
+library(tidyr)
+library(dplyr)
+library(ggplot2)
+farms$farm <- as.factor(farms$farm)
+farms %>% ggplot(aes(x=N, y=size, color=farm)) +
+  geom_point()+
+  geom_smooth(method = "lm", se=FALSE)
+
+```
+
+
+Some plots to check how the data looks like ussing lattice
+
+```{r}
+library(lattice)
+xyplot(size ~ N|farm, groups =farm, data=farms) # | adds facets, groups adds colors
+```
+
+More info on lattice (https://www.statmethods.net/advgraphs/trellis.html)
+
+### Recipie for MEM
+
+The recipe for implementing a Mixed Effects Model is 
+
+a. spot the grouping in the data
+
+There is grouping for the farm factor
+
+b. how many random effects are there in the data?
+
+One RE for farm. 
+
+c. if two or more, are they nested? Can you spot that from the data labeling, or if not, is there any reason to suspect nesting / crossing?
+
+There are not 
+
+d. define the deterministic part of the model, i.e. find the fixed effects incl. their interactions and potential quadratic / cubic etc. terms
+
+Nitrogen can be a fixed effect if we are intrested on how the size changes with N
+
+e) can you specify random slopes for one or all of the ranodm effects?
+
+There can be a RS for N for each different farm. 
+
+### Fit with lme4
+
+```{r}
+library(lme4)
+lmer.1 <- lmer(size ~ N + (N|farm), data=farms)
+```
+
+Let´s do some analysis  to understand the model:
+
+```{r}
+summary (lmer.1)
+```
+
+In the **Random effects** section fo the summary we can see the variance components. The variance btw groups (intercept) and the variance within groups (residuals). N as random slope explains very little of variance. We can also see the correlation between the parameters. 
+
+In the **Scaled residuals** section we see the distribution of the residuals within grups. This should be more or less simetrical if its gaussian, which is the case. 
+
+In the **Fixed effects** we see the value of the parameters, intercept and slope. We also see the **Correlation of fixed effects** which is the correlation of the parameters. 
+
+The info from this [link from stack exchange](https://stats.stackexchange.com/questions/24452/how-to-interpret-variance-and-correlation-of-random-effects-in-a-mixed-effects-m) can hel to understand a bit more. 
+
+Here is the model descriptio, not identical to ows case but quite simmilar:
+
+ ![](Capture1.PNG){width=800px}
+ 
+ And here we have som explanation and comparisson with the summary we get:
+ 
+![](Capture2.PNG)
+
+Owr summary shows something that should be at least distubing. The correlation between the intercept and random slope of the random effects have a correlation of one. This is not good and indicates that there are not enough data to estimate this correlation. There is not enough data to estimate the variation given by N iside each farm. This may occur because there is low variation of plant size for different N.
+
+We should try to simplify owr model. There are two ways we can simplify it:
+ 
+```{r}
+# 1) remove this correlation:
+lmer.2 <- lmer(size ~ N + (1|farm) + (0 + N|farm), farms)
+# still singular fit! Check the variance term for the random slope: it is exactly zero, no variance left for the random effects part
+
+# 2) remove the random intercept
+lmer.3 <- lmer(size ~ N + (1|farm), farms)
+```
+
+At this point we should accept that it is a better idea to keep a simple model without an intercept. We could compare both models, with and withut it using AIC. 
+ 
+### Fit with nlme
+
+```{r}
+library(nlme)
+
+#Without random intercept
+nlme.1 <- lme( size ~ N, random = ~ 1| farm, data = farms)
+
+#With random intercept
+#nlme.2 <- lme( size ~ N, random = ~ N| farm, data = farms)
+#Gives an error, no convergence, related with the problem we found. 
+
+#Error in lme.formula(size ~ N, random = ~N | farm, data = farms) : 
+#nlminb problem, convergence error code = 1 message = iteration limit 
+#reached without convergence (10)
+
+```
+
+Lets see how the summary looks like: 
+
+```{r}
+summary(nlme.1)
+```
+
+In the random effect we can see the variance components. The variance btw groups (intercept) and the variance within groups (residuals). The we see the distribution of the residuals within grups. Should be more or less simetrical if its gaussian, which is the case. Finally the tables give us info about AIC/BIC and about the estimations for the fixed effects.
+
+**Random effects**
+The variance among groups is 8.51^2 = 72.35 (the standard deviation is the square root of the variance), while the the residual variance is 1.93 = 3.72. This means: most of the variance in plant size is thus due to random variation of farms around the population average 85.567. The intraclass correlation (ICC) is indeed 72.35 / (72.35 + 3.72) close to 1. Farms are quite similar within each other but quite different from each other.
+
+**Fixed effects**
+Nitrogen concentration seems to affect plant growth rather little: with an increase by one unit, plant size rises by 0.708. This little variation with N may be the reason why random slope model does not converge: so much variance due to N is explained by N as a fixed effect, that a random slope is not supported.
+
+To study the estiamtes of the variance components as Std and Variance we use varCorr
+
+```{r}
+
+VarCorr(nlme.1) 
+
+```
+
+The SteDev is info we already have in the summary. How much variance is explained per group (intercept) and how much is left for the residuals (Residual). Therefore, farms are differen from each other but simmilar inside each other. The effect of nitrogen on size is not as big as the effect of farm. Size increases 0.1 with one unit of N, buth farms are much more different when wee see the random effect coeffitients. This little variation with N may be the reason why random slope model does not converge: so much variance due to N is explained by N as a fixed effect, that a random slope is not supported.
+
+To see the estimates of the random predictors we use *ranef()
+
+```{r}
+
+ranef(nlme.1)
+
+```
+
+We see here the estiated intercepts per farm, they are quite different from each other.
+
+
+### Extra Exercise 
+
+Try and fit the model without the fixed effect but with N as random slope: what happens? Why? What can you say about the variances? 
+
+```{r}
+nlme.2 <- lme(size ~ 1 , random = ~N|farm, data = farms )
+summary(nlme.2)
+```
+
+The ammount of variance explained by N as random slope is even smaller that the residual variance. We can compare the two models. However we have to be carefull here. The two models differ in the fixed effects, so the fitting method should be ML. 
+
+```{r}
+update(nlme.1, method = "ML")
+update(nlme.2, method = "ML")
+anova(nlme.1, nlme.2)
+```
+
+Then, the second model, no fixed effect and N as random slope, is worst than the first one. Yuhuu, this makes sense.
+
+# Exercise 2
+
+Load the data set "fertilizer": it describes the height of plants grown from different seed categories over time:
+
+- What would be the most complex random effects structutre you can imagine? 
+- Does the model fit? 
+- What is the simplest random effects structure you get running?
+
+### Investigate and plot the data
+
+```{r}
+
+fertilizer <- read.delim("fertilizer.txt")
+head(fertilizer)
+
+```
+
+We have root as a continious response variable. Plant and fertilizer are categorical. Week is continious accouting for time. Before doing anything else let´s plot the data:
+
+```{r}
+
+fertilizer %>%ggplot(aes(y = root, x = week, color = plant)) +
+  geom_line(aes(group = plant)) + 
+  facet_grid(~ fertilizer)
+```
+
+
+The same but with lattice (but I deffinitely prefer ggplot)
+
+```{r}
+xyplot(root~week|fertilizer, group=plant, fertilizer)
+
+```
+
+Wat do we see here?: 
+
+- A clear correlation for a given plant ID. 
+- We can some effect on fertilizer since the growth seems to be lower in non fertilized plants. 
+Maybe plotting fertilized and non fertilized plants in the same graph shows a bit better this difference: 
+
+```{r}
+
+
+fertilizer %>% ggplot(aes(y = root, x = week, color = fertilizer)) +
+  geom_line(aes(group = plant)) 
+```
+
+With some more insights into the data we can try to follow the recipie
+
+a. Spot the grouping in the data
+
+There is a clear correlation for each plant. Plat ID is a grouping factor, all measures in the same plant are not independent.
+
+b. how many random effects are there in the data?
+
+Plant ID is deffinitely a random effect.
+We could allow a different slope for each plant ID. However, if we take a look at the plots, all the slope does not change much between plants. And we already know from the previous exercise that without too much data and adding random slopes might only conduce to a headache. 
+However we culd try to incorporate the random slope into the model and then do model selection and let AIC to decide for us...
+
+c. if two or more, are they nested? Can you spot that from the data labeling, or if not, is there any reason to suspect nesting / crossing?
+
+Only one random effect so fat so...
+
+d. define the deterministic part of the model, i.e. find the fixed effects incl. their interactions and potential quadratic / cubic etc. terms
+
+Response is root, and the fixed factor is fertilizer. Time can also be a fixed effect on root. 
+
+e. can you specify random slopes for one or all of the ranodm effects?
+
+We already discussed that on b. 
+
+### Fit for lme
+
+Looking at the plots I am also not completely sure to incorporate an interactonn between the fixed effects. However, theoretically it is possible that this interaction occurs. So let´s include it and see if it is signifficant. 
+
+```{r}
+lme.fert.1 <- lme(root~week*fertilizer, data=fertilizer, random= ~ 1|plant)
+summary(lme.fert.1)
+```
+
+The summary gives a lot of info. 
+
+For the **RE** we see that there is not a lot of variation between plants. 
+For the **FE** we see that week is deffinitely important to explain root. Fertilizer in marginally important...plus we can not really trust the p-vals for this problem of how difficult is to estimate the df...( so again we should compare models)
+The interaction seems to be important, although we did not see that in the plots. 
+We also see the correlation of the fixed effects.
+
+A more complex option is to allow as well random slopes. Random slopes and random intercepts independent. The followint notation is equivalent to (||) in lmer
+
+```{r}
+lme.fert.2 <- lme(root ~ week * fertilizer, 
+          random = list(plant = pdDiag(~week)),
+          data=fertilizer)
+summary(lme.fert.2)
+
+```
+
+The random slope explains very little variance, even one order of magnitude smaller that the residuals. I would not keep it. 
+
+More info on how to translate from lmer to nlme package on this nice page:
+(https://rpsychologist.com/r-guide-longitudinal-lme-lmer)
+
+
+From my personal point of view. I understan better lme4 structure. There is also more doccumentation. But nlme is more flexible for some data structures...Also some discussion on which model to choose:
+
+(https://stats.stackexchange.com/questions/5344/how-to-choose-nlme-or-lme4-r-library-for-mixed-effects-models)
+
+### More analysis for the nlme model
+
+Let´s analize a bit more the models we just fit. Get the variance components of the groups:
+
+```{r}
+
+VarCorr(lme.fert.1)
+
+```
+
+
+The variance explained by plant is smaller than residuals. 
+
+Get the intercepts
+
+```{r}
+
+ranef(lme.fert.1)
+
+```
+
+It is quite hard to decide if it makes sense to include random intercept and slope some times.  We can do some more analysis to answer this question:
+
+```{r}
+
+#we fit one lm per group
+?lmList
+
+#Data is partitioned according to the levels of the grouping factor g and individual 
+#lm fits are obtained for each data partition, using the model defined in object
+
+lm2.list<- lmList( root ~ week|plant, data = fertilizer )
+lm2.list
+```
+```{r}
+
+nlme::intervals(lm2.list) # For an unknown reaason not working when knitting#
+plot(nlme::intervals(lm2.list))
+
+```
+
+In this plot it is possible to see that the plants have not really different slopes. So it does not make really sense to fit a random slope. 
+For the plants we have to fit random intercept because of the grouping. There is considerable overlap in the set of intervals for the slope with respect to week. It may be feasible to use a model with a common slope. The non difference in intercepts is because we are comparing intercepts at week 0, data that we do not have and where we do not expect any difference of the treatment (because the tr+itment hadn´t started). Let´s correct this:
+LEt´s not compare intercepts at week 0 but at the end or middle of the experiment. 
+
+```{r}
+
+lm2.list<- lmList( root ~ I(week-8)|plant, data = fertilizer )
+lm2.list
+
+intervals(lm2.list)
+plot(intervals(lm2.list))
+```
+
+
+### Fit the model using `lme4`
+
+
+```{r}
+lmer.1 <- lmer(root ~ week*fertilizer + (1|plant) + (0+week|plant), data=fertilizer)
+
+#Equivalent syntax:
+ #lmer.1 <- lmer(root~week*fertilizer + (week||plant), data=fertilizer)
+ #lmer.1 <- lmer(root~week*fertilizer+ 1 + (1|plant) + (0+week|plant))
+
+
+```
+
+We check the summary
+
+```{r}
+summary(lmer.1)
+```
+
+**Scaled residuals** We see there is a simmetrical distribution. A very non simetrical disrtibution could be a problem. 
+
+**Random effects** Again random slope does not explain much variance. Also Plant ID does not have a big variance, is smaller than the residuals. Plants are not very different to each other. We can remove the random slope. Not the random intercept because we have to account for the correlation of all the meassurements done in the same plant. 
+
+**Fixed effects** We do not know if they are significant or not. But we can compare the effect with the std. error to see if it is important. Week has an effect one order of magnitude bigger than its standard error. That means something! Fertilizer and the interaction effects are only twice the Std. Error. This means that the effect is not much bigger than the error. I wouls try to fit the model without the itneraction. 
+
+**Correlation of fixed effects** Correlation between the parameters. Is high, that is fine. It just does not have to be one which would mean no convergence of the model fitting. 
+
+I would first take out the random slopes, compare. Then take out the interaction, and then compare
+
+```{r}
+lmer.2 <- lmer(root ~ week * fertilizer + (1|plant), REML = TRUE, data= fertilizer)
+anova (lmer.1, lmer.2)
+```
+
+So we can discard the random slope. This is not magic, it is usually what you see in the plots of your data. 
+
+now lets discar the interaction. We are modifying the fixed effects, so we need ML to compare. 
+
+```{r}
+update(lmer.2, REML = FALSE)
+lmer.3 <- lmer ( root ~ week + fertilizer + (1|plant), RMEL = FALSE, data= fertilizer)
+anova(lmer.2, lmer.3)
+```
+
+The model with the interaction is better. So we finally keep it. 
+
+# Exercise 3
+
+Use the above specified models and refit them with Maximum Likelihood 
+
+- nlme: specify `method = "ML"` 
+
+- lme4: specify `REML = FALSE`
+
+in both packages REML is the default!). How do the variance and covariance values change with Maximum Likelihood
+
+REML variance is larger because it accounts for the fact that the fixed parameters are estimated.
+
+Residuals might be the same, because what changes is the variance of te "random" effects.
+
+```{r}
+lmer.REML <- lme(root ~ week * fertilizer, random = ~ 1|plant, data = fertilizer, method = "REML")
+
+lmer.ML <- lme(root ~ week * fertilizer, random = ~ 1|plant, data = fertilizer, method = "ML")
+
+
+VarCorr(lmer.REML)
+
+
+VarCorr(lmer.ML)
+```
+
+Estimated variances are lower for ML because in the calculation it does not account for the uncertainty of the parameters. 
+
+# Exercise 4
+
+
+For each of the models, calculate the intraclass correlations. 
+LEt´s first remember what was the inetr class correlation (ICC)
+
+$ICC = \frac{Varriance_{btw groups}}{Variance_{btw groups}+Variance_{within group}}$
+
+```{r}
+model.2 <- lme(size~N, data=farms, random = ~ 1|farm )
+model.4 <- lmer (size~N+(1|farm), data = farms)
+model.7 <- lmer(root~week*fertilizer + (week||plant), data=fertilizer)
+
+```
+
+Model 2
+
+```{r}
+VarCorr(model.2)
+```
+
+We do the calculation
+```{r}
+72.354531 / (72.354531 + 3.724354)
+```
+
+Model 3
+```{r}
+VarCorr(model.4)
+```
+
+ We only get back the std. Dev. So we have to square this number. 
+ 
+```{r}
+8.5061^2/(8.5061^2+  1.9299 ^2) 
+```
+ 
+ Model 4 
+ 
+ 
+```{r}
+VarCorr(model.7)
+
+0.233598^2 / (0.233598^2 + 0.035821^2 + 0.467469^2)
+
+```
+ 
+ 
+# Exercise 5
+ 
+Load the data set "rats". Glycogen concentrations was measured under 3 treatments, 
+applied to 6 rats (replication of 2). From each rat three pieces of its liver were
+taken, and two preperations per liver piece were made. 
+
+
+### Investigate the data
+
+```{r}
+rats <- read.delim("rats.txt")
+head(rats)
+```
+
+
+
+```{r}
+
+xtabs(~ Treatment + Rat + Liver, data = rats )
+
+str(rats)
+
+rats$Treatment <- factor(rats$Treatment)
+rats$Rat <- factor(rats$Rat)
+rats$Liver <- factor(rats$Liver)
+
+```
+
+ Some plots to see how the data looks like:
+ 
+```{r}
+
+rats %>% ggplot( aes(y=Glycogen, x=Treatment, group=Liver, color=Liver))+
+  geom_point()+
+  facet_grid(Treatment~Rat)
+
+
+rats %>% ggplot(aes(y=Glycogen, x=Treatment))+
+                   geom_boxplot()
+
+```
+ 
+ 
+```{r}
+
+ with(rats, (interaction.plot(Treatment, Rat, Glycogen)))
+
+```
+ 
+ The exercise does not tell, but of course the same rat can not recieve more than one treatment. There is two rats per treatment. And for each rat there are three measurements because the liver was cuttet in three bits (of course pseudoreplication)
+ 
+ 
+![](Capture3.PNG)
+
+### Answer the recipie questions 
+
+
+- Follow the above recipe: where is the grouping, how many random effects, nested or crossed? Fixed effects? Random slopes?
+
+ The recipe for implementing a Mixed Effects Model is 
+ 
+a) spot the grouping in the data
+
+There is groupping inside each rat. 
+
+
+b) how many random effects are there in the data?
+
+Rat and liver are RE
+
+c) if two or more, are they nested? Can you spot that from the data labeling, or if not, is there any reason to suspect nesting / crossing?
+
+They are nested, each liver bellongs to one rat
+
+d) define the deterministic part of the model, i.e. find the fixed effects incl. their interactions and potential quadratic / cubic etc. terms
+
+We are intreated in the effect of treatment on glycogen
+
+e) can you specify random slopes for one or all of the ranodm effects?
+
+In this case there is no continious predictor so no random effect. 
+
+### Fit with lmer
+
+
+```{r}
+model<-lmer(Glycogen~Treatment+(1|Treatment/Rat/Liver), data=rats)
+summary(model)
+```
+
+Or, in roder not to specify tratment as random we change names of rats to give unique names to each real rat an liver bit
+```{r}
+
+rats$Rat2 <- paste0("T",rats$Treatment, "R",rats$Rat)
+rats$Liver2 <- paste0("T", rats$Treatment, "R", rats$Rat, "L", rats$Liver)
+
+model2 <- lmer(Glycogen~Treatment+(1|Rat2/Liver2), data=rats)
+summary(model2)
+```
+
+
+The summaries are exactly the same exept for variance that is assigned to the Treatment as random factor, that does not appear in the seccond model.
+
+Whether you explicitly specify a random effect as nested or not depends (in part) on the way the levels of the random effects are coded. If the 'lower-level' random effect is coded with unique levels, then the two syntaxes (1|a/b) (or (1|a)+(1|a:b)) and (1|a)+(1|b) are equivalent. If the lower-level random effect has the same labels within each larger group (e.g. blocks 1, 2, 3, 4 within sites A, B, and C) then the explicit nesting (1|a/b) is required. It seems to be considered best practice to code the nested level uniquely (e.g. A1, A2, ., B1, B2, .) so that confusion between nested and crossed effects is less likely.
+
+
++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+
+Answer to the exercises Mixed Effects Models With R
+Professor: Arne Schröder
+Tutor: Elisa Schneider
+Intended for the only purpose of teaching @ Freiburg University
+Sources: Mick Crawley, R book, 2nd edition; Zuur, Ieno, Walker,
+Saveliev and Smith 2009 Mixed Effects Models and Extensions in
+Ecology with R; Pinheiro and Bates 2000. Mixed effects models in 
+S and S-plus.
+
+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++

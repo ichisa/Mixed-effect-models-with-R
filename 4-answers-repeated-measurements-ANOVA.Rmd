@@ -1,0 +1,338 @@
+---
+title: "exercises_day4"
+author: "Elisa"
+date: "20 February 2019"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(ggplot2)
+library(dplyr)
+library(tidyr)
+```
+
+
+#Problem 1
+
+Load the data set "growth.txt". The gain in size (variable "gain") has been measured on 
+mice that were fed a diet (variable "diet") of different cereals (wheat, oats, or barley). 
+Each diet was further supplemented with two different vitamin supplements (variable "supplement":
+supergain, supersub and a control). You want to know how diet and supplement growth.
+
+- are there repeated measurements, i.e. is there grouping so that data are not independent?
+- how would you analyse these data to answer the research question?
+
+###Solution 
+
+```{r}
+growth <- read.delim("growth.txt")
+```
+
+This is a *factorial experiment*
+A factorial experiment has two or more factors, each with two or more levels, plus replication for each combination of factors levels. This means that we can investigate statistical interactions, in which the response to one factor depends on the level of another factor. Our example comes from a farm-scale trial of animal diets. There are two factors: diet and supplement. 
+
+- Diet: is a factor with three levels: barley, oats and wheat. 
+
+- Supplement: is a factor with four levels: agrimore, control, supergain and supersupp. 
+
+- Gain: The response variable is weight gain after 6 weeks.
+
+We can inspect the means of each subgroup:
+```{r}
+attach(growth)
+tapply(gain,list(diet,supplement),mean)
+
+
+levels(diet)
+levels(supplement)
+detach(growth)
+replications(gain~diet*supplement, growth)
+replications(gain~diet*supplement, growth[1:20,])
+
+xtabs(~ growth$diet+ growth$supplement)
+```
+
+Some examples to see how xtabs and replications works
+
+```{r}
+#We create a df
+df <- data.frame(f1 = rep (c("a", "b"), each=10), 
+                 f2 = rep (c("ctr", "tr"), 10), 
+                 f3 =rep(c("big1","big2", "med", "small1", "small2"), 4), 
+                 response = rnorm(20,5,2))
+
+
+#xtabs
+xtabs(~ df$f1 + df$f2)
+
+xtabs(~ df$f1 + df$f2 + df$f3)
+
+xtabs(~  df$f3 + df$f1 + df$f2)
+
+#replications
+
+replications(response ~ f1, data=df)
+
+replications(response ~ f2, data=df)
+
+replications(response ~ f3, data=df)
+
+replications(response ~ f1 + f2 + f3, data=df)
+
+replications(response ~ f1 * f2 * f3, data=df)
+```
+
+
+```{r}
+growth %>% ggplot(aes(y=gain, x=supplement, colour=supplement))+
+  geom_boxplot()+
+ facet_grid(.~ diet)
+
+
+growth %>% 
+  ggplot() +
+  aes(y=gain, x=supplement, colour=diet) +
+  geom_point(aes(group = supplement)) +
+  geom_point()
+
+
+
+growth %>% 
+  ggplot() +
+  aes(x = supplement, color = diet, group = diet, y = gain) +
+  stat_summary(fun.y = mean, geom = "point") +
+  stat_summary(fun.y = mean, geom = "line")
+```
+
+Another example of plots not using ggplot 
+
+```{r}
+attach(growth)
+interaction.plot(diet, supplement, gain)
+detach(growth)
+```
+
+The experimental desing is balanced and there are no pseudoreplications. All meassurements are independent. Therefore, for two categorical variable and one numeric response i possible to use a two way ANOVA. We have to check that the reponse variable is normally distributet
+```{r}
+a=2
+qqnorm(y=growth$gain)
+qqline(y=growth$gain)
+
+shapiro.test(growth$gain) # not significant so the data is normally distributet
+library(car)
+leveneTest(growth$gain, group = factor(paste0(growth$supplement, growth$diet)))
+
+```
+Both tests are not signifficant which means that we are meeting the assumptions for the ANOVA: Equality of variances ammong groups and normal distr+ibution of response variable. 
+
+
+Let´s do de analysis of the two way ANOVA
+
+We estimate parameters for the main effects of each level of diet and each
+level of supplement, plus terms for the interaction between diet and supplement. Interaction
+degrees of freedom are the product of the degrees of freedom of the component terms (i.e. $(3???1)×(4 ???1) = 6$).
+
+```{r}
+attach(growth)
+model1<-aov(gain~diet*supplement)
+summary.lm(model1)
+
+model2<-aov(gain~diet + supplement)
+summary.lm(model2)
+
+```
+
+It is clear that we need to retain all three levels of diet (oats differ from wheat by 5.99???3.09 = 2.90 with a standard error of 0.44). It is not clear that we need four levels of supplement, however. Supersupp is not obviously different from agrimore (0.727 with standard error 0.509). Nor is supergain obviously different from the unsupplemented control animals 3.38???2.70=0.68. We shall try a new two-level factor to replace the four-level supplement, and see if this significantly reduces the model's explanatory power. Agrimore and supersupp are recoded as best and control and supergain as worst:
+
+```{r}
+supp2<-factor(supplement)
+levels(supp2)
+
+levels(supp2)[c(1,4)]<-"best"
+levels(supp2)[c(2,3)]<-"worst"
+levels(supp2)
+
+model3<-aov(gain~diet+supp2)
+anova(model1,model3)
+detach(growth)
+```
+
+
+# Problem 2
+Load the data set "farms.txt". In it, the plant size ("size") of plants has been several times 5 times on each of 24 sites ("farms"). At the same spot the nitrogen concentration in the soil has been recorded ("N"). The question is, how plant size changes as nitrogen concentration changes.
+- again, spot the grouping. Where is the pseudo-correlation? Is it temporal or spatial? Are the data balanced?
+- analyse the data to answer the research question using R. 
+
+```{r}
+farms <- read.delim("farms.txt")
+
+with(farms, (plot(N,size,pch=16,col=farm))) # quick plot to inspect data
+
+xtabs(~farms$farm) # check for balance design
+unique(is.na(farms$N)) # check for nas
+unique(is.na(farms$size)) # check for nas
+```
+Then, we have a balance experimental design with no nas.
+
+We can use a lm:
+```{r}
+attach(farms)
+model1<-lm(size~N+factor(farm)) # same slope but different intercepts
+model2<-lm(size~N*factor(farm)) # different slopes but different intercepts -- too many parameters
+model3<- lm(size~factor(farm))
+
+anova(model1, model2, model3)
+detach(farms)
+```
+The conclussion here is that only the farm is important to owr response variable. 
+
+This might make you think that the meassurements in each farm are correlated. Actually, farm is not something we are intrested in. It is a random effect. And, measurements inside one farm are not independent
+We can model the error using the error term when specifying the anova. This is, we can do an ANOVA with hyerarchical design. 
+
+```{r}
+
+mod.aov.1 <- aov(size ~ N + Error(farm), farms)
+mod.aov.2 <- aov(size ~ N + Error(farm/N), farms)
+
+```
+
+
+But which is the problem here, well, N is not a categorical variable. It is fitting intercepts and the same slope for all the farms. It can not be used to fit different slopes per farm. We could do that adding interactions to a lm but we could not add the structure of the error. And that´s where we need mixed models. 
+
+
+Let´s make one linear model per farm, this is seen in many papers
+
+```{r}
+
+ggplot(farms, aes(x= N, y=size, group = farm, color= farm))+
+    geom_point()+
+    geom_smooth(method=lm, se=TRUE)
+```
+
+
+#Problem 3
+load the data set "artemisia.txt". It describes how the plant Artimisa maritima growth under low (0) and high (1) competition and
+under absence (0) and presence (1) of nematodes. This is a 2 x 2 factorial design with 2 treatments, each with 2 levels.
+
+- again: is there any form of grouping? What is it?
+- should you run a repeated measurement ANOVA? If no, why not?
+- try it!
+- why does the output differ between "mod <- aov(Artemisia ~ comp * nematodes + Error(as.factor(block)), artemisia)" and
+mod <- aov(Artemisia ~ comp * nematodes + Error(block), artemisia)
+
+##Solutions
+
+```{r}
+artemisa <- read.delim("artemisia.txt")
+artemisa$comp <- factor(artemisa$comp)
+artemisa$nematodes <- factor(artemisa$nematodes)
+artemisa$block <- factor(artemisa$block)
+artemisa <- artemisa[1:52,]
+with(artemisa, (xtabs(~comp+nematodes)))
+
+```
+We have a non-balance design. 
+We also have the variable block that might be a grouping factor. 
+Running a repeated measurement ANOVA is a problem because the experimental design is umbalanced. 
+
+Some more things that show how messy is this data
+
+```{r}
+
+replications(Artemisia~ nematodes*comp, data=artemisa)
+
+replications(Artemisia~ nematodes*comp*block, data=artemisa)
+```
+
+
+```{r}
+
+aov(Artemisia ~ comp *nematodes, data= artemisa)
+```
+
+
+```{r}
+attach(artemisa)
+mod <- aov(Artemisia ~ comp * nematodes + Error(as.factor(block)))
+summary(mod)
+detach(artemisa)
+```
+
+
+
+
+#Notes
+
+##Split-plot design
+
+In a split-plot experiment, different treatments are applied to plots of different sizes. Each different plot size is associated with its own error variance. 
+
+The error structure is defined in the Error term, with the plot sizes listed from left to right, from largest to smallest, with each variable separated by the slash operator /. The smallest plot size, fertilizer, does not need to appear in the Error term. 
+
+Block is not a fixed effect, we are non intrested in it, it si a random effect and this it only appear in the error temr. 
+
+```{r}
+yields <- read.delim("splityield.txt")
+attach(yields)
+model<-aov(yield~irrigation*density*fertilizer +Error(block/irrigation/density))
+
+
+summary(model)
+detach(yields)
+```
+So, how do we interprete this table. 
+
+- Error: block
+This is the MS of blocks. That is, the difference between the mean of the blobks and the grand mean
+
+- Error : block : irrigation
+This is the MS of the group irrigation (each irrigation group mean - mean of the block ) / MS inside the group (each value - mean of the subgroup irrigation)
+
+- Error: block : irrigation : density
+The MS of sub-sub-group density (the mean of the sub-sub group - the mean of the group to which it corresponds) / MS within each density group (each value of the sub-sub-group minus the mean of the corresponding sub-sub group)
+
+- Error: within
+Results for the smaller sub-sub-sub group. 
+fertilizer . MS of the group (the mean of each sub-sub-sub group minus the mean fo the sub sub grout to which it corresponds)
+
+And the interactions 
+
+```{r}
+attach(yields)
+
+interaction.plot(fertilizer,irrigation,yield)
+interaction.plot(density,irrigation,yield)
+detach(yields)
+```
+
+# Repeated measurements along time
+
+```{r}
+fertilizer <- read.delim("fertilizer.txt")
+library(lattice)
+xyplot(root ~ week|fertilizer, group = plant, fertilizer, type = "l") #the lattice package for easy plotting of grouped data
+
+
+```
+
+Or ggplot
+```{r}
+library(ggplot2)
+library(dplyr)
+library(tidyr)
+fertilizer %>% ggplot(aes(x=week, y=root, colour=plant)) +
+  geom_line() +
+  facet_grid(.~ fertilizer )
+```
+
+```{r}
+rm.fertilizer <- aov(root ~ week * fertilizer + Error(plant/week), fertilizer)
+summary(rm.fertilizer)
+```
+
+```{r}
+proj(rm.fertilizer)[1] # global intercept
+plot(aov(root ~ week * fertilizer , fertilizer))
+```
+
