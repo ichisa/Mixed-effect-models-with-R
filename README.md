@@ -4,6 +4,7 @@ Some answers for the exercises of the course MEM
 Answer to the exercises Mixed Effects Models With R 
 Professor: Arne Schröder 
 Tutor: Elisa Schneider 
+
 Intended for the only purpose of teaching @ Freiburg University 
 
 Sources: 
