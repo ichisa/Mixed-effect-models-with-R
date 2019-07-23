@@ -1,0 +1,179 @@
+---
+title: "day12"
+author: "Elisa"
+date: "5 March 2019"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+require(lme4)
+require(ggplot2)
+require(dplyr)
+require(tidyr)
+require(DHARMa)
+```
+Exercises Day 12
+
+1) Load the data "beetles.txt":
+ 
+Background: 
+The national forest agency has asked you for advice - research has suggested that bark beetle attacks will be reduced if 
+the climate becomes wetter under climate change, as suggested for the region we are looking at here. 
+The forest agency measured bark beetle counts and precipitation over 20 years on 50 different plots across an altitudinal gradient. 
+
+Exercise:
+Analyse the data and give your conclusion regarding the effects of precipitation. 
+
+```{r}
+beetles <- read.delim("~/mixed effect models/day12/beetles_data.txt")
+
+```
+
+
+### Investigate the data
+
+```{r}
+str(beetles)
+xtabs(~plot+year, beetles)
+
+```
+
+some plots before starting
+
+
+```{r}
+
+
+beetles %>% ggplot(aes(x=precipitation, y=beetles, color=factor(plot))) +
+  geom_point()
+
+beetles %>% ggplot(aes(x=precipitation, y=beetles, color=factor(plot))) +
+  geom_point() +
+  facet_wrap(~year)
+
+beetles %>% ggplot(aes(x=year, y=beetles, group= factor(plot), color=factor(plot))) +
+  geom_point()+
+  geom_line()
+
+beetles %>% ggplot(aes(x=year, y=beetles, group= factor(plot), color=factor(plot))) +
+  geom_point()+
+  geom_line()+
+  facet_wrap(~plot)
+
+```
+
+
+
+Count data- poisson distribution. 
+
+One option is to fit a model where year is a random effect. In this case, we suppose that years are independent, and that the particular characteristichs of that year can be seen as a factor that groups the data
+```{r}
+
+model1 <- glmer(beetles~altitude+precipitation+(1|year)+(1|plot), family=poisson, data=beetles)
+summary(model1)
+
+model1.b <- glmer(beetles~altitude+precipitation+year+(1|year)+(1|plot), family=poisson, data=beetles)
+summary(model1.b)
+```
+
+Another option is to think that year might be a continious variable. We could add year as a fixed effect and allow for random slopes, for example. 
+When trying to add the random slope the following warning appears
+
+- Can not converge 
+
+or 
+
+- Warning message:
+In checkConv(attr(opt, "derivs"), opt$par, ctrl = control$checkConv,  :
+Model is nearly unidentifiable: large eigenvalue ratio - Rescale variables?
+
+Then we rescale the predictors, then not predictors with higher numbers are more important in the model
+
+
+```{r}
+
+model2 <- glmer(beetles~scale(altitude)+scale(precipitation)+scale(year)+(scale(year)|plot), family=poisson, data=beetles)
+summary(model2)
+
+```
+
+The random slope does not explain so much variability. 
+
+Actually, for me, looking at the data, it makes more sense to use year as a categorical ranfom effect. There is not a trend allong the years but more a particular situation each year. 
+Year is highly significant. Then the desition on weather it is a random or fixed effects depends if it will be included between the fixed effects. 
+
+### Diagnostics of the model
+
+```{r}
+ranefects <- ranef(model1) # random effects for the groups 
+hist(ranefects$plot[,1])
+hist(ranefects$year[,1]) # random effects should be normally distr+ibuted
+
+#qqmath(ranef(model1)) #for normality of random effects # also looks good
+
+```
+
+
+We can also check the distr+ibution fo the residuals- pearson residual
+
+```{r}
+# using Pearson residuals:
+rp <- residuals(model1, type = "pearson") # get pearson residuals
+link <- predict(model1, type = "link") # prediction on the link scale, quite overdispersed
+plot(rp)
+plot(link)
+plot(rp ~ link)  
+```
+
+Using DAHRma package
+
+
+```{r}
+
+
+out<- simulateResiduals(model1)
+plot(out)
+testDispersion(out) # not really overdispersed
+testZeroInflation(out) # heavily zero-inflated but not overdispersed
+
+
+plotResiduals(beetles$altitude, out$scaledResiduals) # altitude makes a problem
+plotResiduals(beetles$precipitation, out$scaledResiduals)
+
+testTemporalAutocorrelation(out) # and finally some test for temporal autocorrelation: looks good
+```
+
+there is mimsspecification of beetles altitude. LEts try adding quadratic term
+
+```{r}
+model2 <- glmer(beetles~poly(altitude, 2)+precipitation+(1|year)+(1|plot), family=poisson, data=beetles)
+summary(model2)
+```
+The square term is significant. So lets check the model again- significant. 
+
+```{r}
+# using Pearson residuals:
+rp <- residuals(model2, type = "pearson") # get pearson residuals
+link <- predict(model2, type = "link") # prediction on the link scale, quite overdispersed
+plot(rp)
+plot(link)
+plot(rp ~ link)
+```
+
+
+```{r}
+
+out<- simulateResiduals(model2)
+plot(out)
+testDispersion(out) # not really overdispersed
+testZeroInflation(out) # heavily zero-inflated but not overdispersed
+
+
+plotResiduals(beetles$altitude, out$scaledResiduals) # altitude makes a problem
+plotResiduals(beetles$precipitation, out$scaledResiduals)
+
+testTemporalAutocorrelation(out)
+
+```
+#OH!!!!!!  really much better naw!!!

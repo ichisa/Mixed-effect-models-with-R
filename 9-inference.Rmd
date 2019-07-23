@@ -1,0 +1,304 @@
+---
+title: "Exercises - Day 9"
+author: "Elisa"
+date: "18 July 2019"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+knitr::opts_chunk$set(message = FALSE)
+
+```
+
+# Exercise 1
+
+Load the data set "repeated". Under the presence and absence of snails (treatment "Mollusc") and with insects being sprayed with a pesticide or not (treatment "Insect") grass biomass (variable "Grass") was measured over time (1 - 6 weeks, "Time") in six blocks ("Block"). How does the treatments affect grass biomass?
+
+Using the knowledge gained so far:
+- build a model to answer this question. 
+- Fit it and validate it. 
+- Use an appropriate test for the hypothesis that spraying insects and absence of snails affect grass biomass over time.
+
+### Load and inspect the data
+
+
+```{r}
+grass <- read.delim("repeated.txt")
+head(grass)
+str(grass)
+```
+
+We do not neet to convert any data to factor, the categorical variables are already coded as factors. But it is important not to forget this at the begining. 
+
+Make a simple plot to see how the data look like. This is also really important not to work in the darkness...
+
+```{r}
+library(dplyr)
+library(tidyr)
+library(ggplot2)
+grass$MolluscInsect <- paste0(grass$Mollusc, grass$Insect)
+
+grass %>% ggplot(aes(x=Time, y=Grass, group=MolluscInsect, color=MolluscInsect))+
+  geom_line() +
+  facet_grid(.~Block)
+
+```
+
+Nice, we have some more information about what is happening. There is a clear correllation os block as expected. Absent sprayed seem to be higher in all the blocks, followed by present-sprayed, Absent unspryed and present unsprayed. We also see that the slopes aare quite different per block (A,B,C,D,E), so we should deffinetly add random intercept and slope. 
+
+#### Fit the model
+
+```{r}
+library(lme4)
+
+m0 <- lmer(Grass ~ Insect*Mollusc*Time + (Insect*Mollusc*Time|Block), data=grass)
+summary(m0)
+
+m1 <- lmer(Grass ~ Mollusc*Insect*Time + (Time|Block), data=grass)
+summary(m1)
+
+m2 <- lmer(Grass ~ Mollusc*Time + Insect*Time + (Time|Block), data=grass)
+summary(m2)
+```
+
+The first model with maximum random effects does not converge. The seccond, that is more reasonable and accouts for the grouping and random slopes converges and shows no problems. The third is a bit simple in it`s fixed effects. And it could be usefull to test the interaction. 
+
+#### Check the assumptions of the model. 
+
+Quick remind of which are the assumptions of the MEM:
+
+From Crawly - The R Book 
+
+There are five fundamental assumptions of linear mixed-effects models:
+
+- Within-group errors are independent with mean zero and variance $\sigma^2$.
+- Within-group errors are independent of the random effects.
+- The random effects are normally distributed with mean zero and covariance matrix $\phi$.
+- The random effects are independent in different groups.
+- The covariance matrix does not depend on the group.
+
+
+#### The random effects are normally distributed
+
+```{r}
+
+par(mfrow=c(1,2))
+hist(ranef(m1)$Block[,1], main="Ran. Int.")
+hist(ranef(m1)$Block[,2], main="Ran. Slp.")
+
+```
+
+This plots look really awfull. But it is hard to asess a distribution only with 5 values. 
+
+#### Within-group errors are independent with mean zero and variance $\sigma^2$.
+ 
+ This means, the residuals are randomly distributted around the mean. We have to plot the residuals
+ 
+```{r}
+plot(m1)
+library(lattice)
+qqmath(m1)
+```
+ 
+This looks quite good. 
+
+#### Within-group errors are independent of the random effects.
+
+This means, for all the random effect groups, the residuals look simmilar, and we check this:
+
+```{r}
+plot(m1, resid(., type = "response") ~ Time | Block, abline = 0) # for each farm
+
+```
+
+This also looks fine. All the blocks have simmilar spred of the residuals. We meet the assumption we were testing. 
+However, in block A and D we see some pattern. But we also have few meassures per block and per date, so it could be just a pattern that we see by chance. 
+
+Last check with DAHRMa package
+
+```{r}
+a<- DHARMa::simulateResiduals(m1, n=1000)
+plot(a)
+```
+
+In this plot the residuals do not seem to be normally distributed...Let's see the residuals values
+
+```{r}
+m1.res <- residuals(m1)
+hist(m1.res)
+shapiro.test(m1.res)
+```
+
+This does not look bad...And the test says the resduals are normally distributed
+
+
+#### The random effects are independent in different groups.
+
+This assumption can not really be checked. It is related to the experimental design and means that there is no sub-grouping of the data. We think that all the measurements inside each group are independent. 
+
+### Now let's start with today task. Hypothesis testing!
+
+We want to ckeck if Mollusc and Treatment affect the grass. We can take this fixed effects out of owr model and see if the model with the predictor performs better than the model without it. 
+
+```{r}
+m1 <- update(m1, REML = FALSE)
+anova(m1)
+```
+
+
+Mollusc and insect have very big F values. This means that they are probably significant predictors.
+
+We can also fit simpler models and compare them
+
+```{r}
+m0 <- update(m0, REML=FALSE)
+
+
+m0.3way <- update(m0, . ~ . - Insect:Mollusc:Time, REML = FALSE)
+formula(m0.3way) #some issues dropping interactions
+
+#m0.3way <- lmer(Grass ~ Insect+Mollusc+Time + (Insect*Mollusc*Time|Block), data=grass, REML=FALSE)
+formula(m0.3way)
+```
+
+The simpler model that converges
+
+```{r}
+m1 <- lmer(Grass ~ Mollusc*Insect*Time + (Time|Block), data=grass)
+m1.3way <- update(m1, . ~ . - Insect:Mollusc:Time, REML = FALSE)
+#m1.3way <- lmer(Grass ~ Mollusc+Insect+Time + (Time|Block), data=grass)
+formula(m1.3way) #some issues dropping interactions
+```
+
+LEt's compare
+
+```{r}
+anova (m1, m1.3way)
+anova (m0, m0.3way)
+```
+ #### Using library `lmerTest`
+ 
+```{r}
+library(lmerTest)
+ranova(m1)
+
+anova(as_lmerModLmerTest(m1)) # fpr some reason I have to convert my model 
+#using the function as_lmerModLmerTest. Otherwhise was just doing normal ANOVA
+```
+  To understand all the features of the ANOVA in `lmerTest` there is this link:
+  
+  (https://stats.stackexchange.com/questions/108161/satterthwaite-vs-kenward-roger-approximations-for-the-degrees-of-freedom-in-mix)
+  
+  One answer points a link to a blog that has intresting info as well. 
+  
+  There are more thigs we can do with this package
+  
+Or to get (almost) everything - use the step-function of lmerTest. We use it now WITHOUT the automated model reduction feature. 
+  
+```{r}
+
+s <- step(as_lmerModLmerTest(m1),reduce.fixed = FALSE, reduce.random = FALSE)
+s
+s$diffs.lsmeans.table
+
+plot(s)
+```
+  
+Let´s do this for the more complex model
+
+```{r}
+
+s <- step(as_lmerModLmerTest(m0),reduce.fixed = FALSE, reduce.random = FALSE)
+s
+plot(s)
+```
+
+More info of this implementation on this [link](http://www2.compute.dtu.dk/courses/02930/SummerschoolMaterialWeb/Readingmaterial/MixedModels-TuesdayandFriday/Packageandtutorialmaterial/lmerTestTutorial.pdf)
+
+### Using RLRsim to do ratio maximum likelihood tests
+
+Exact (Restricted) Likelihood Ratio tests for mixed and additive models.
+
+`exactrLRT`
+This function provides an (exact) restricted likelihood ratio test based on simulated values from the finite sample distribution for testing whether the variance of a random effect is 0 in a linear mixed model with known correlation structure of the tested random effect and i.i.d. errors.
+
+
+```{r}
+library(RLRsim)
+#detach("package:lmerTest", unload=TRUE) 
+
+#ExtractRLRT needs model with only one random factor
+m3 <- lmer(Grass ~ Mollusc*Insect*Time + (1|Block), data=grass)
+
+exactRLRT(m3)
+
+
+```
+
+
+```{r}
+# using parametric bootstrapping
+library(pbkrtest)
+PBmodcomp(m1, m1.3way)
+```
+
+
+# Exercise 2
+
+```{r}
+rep <- read.delim("repmeasures.txt")
+head(rep)
+str(rep)
+#To avoid confussion
+
+repmeasures$rep <- rep(c(1:12), each = 4) 
+repmeasures$rep <- as.factor(repmeasures$rep)
+```
+plots
+```{r}
+rep %>% ggplot(aes(x=time, y=height, group=seed, color=seed)) +
+  geom_line()+
+  facet_wrap(.~rep)
+```
+
+Model
+
+```{r}
+library(nlme)
+ mod.1 <- lme(height ~ time * seed, random = ~ time|rep, rep, method = "ML")
+ mod.2 <- lme(height ~ time + seed, random = ~ time|rep, rep, method = "ML") # the question is explicitely about a time * seed interaction, so test this 
+# with lme, the last model doesn't run. Actually, already the first model has issues with the Variance Components. Which ones?
+# I am switching now to lme4:
+summary(mod.1)
+summary(mod.2)
+```
+
+In lme4
+
+```{r}
+ mod.1 <- lmer(height ~ time * seed + (time|rep), rep, REML = FALSE)
+ mod.2 <- lmer(height ~ time + seed + (time|rep), rep, REML = FALSE) # the question is explicitely about a time * seed interaction, so test this 
+ mod.3 <- lmer(height ~ time + seed + (1|rep), rep, REML = FALSE) # the question is 
+ mod.4 <- lmer(height ~ time + (1|rep), rep, REML = FALSE) # the question is 
+
+```
+
+
+#Test significance
+
+```{r}
+# a Log-Likelyhood-Ratio test:
+ anova(mod.1, mod.2) # not really an effect
+
+# using Satterthwaite
+ library(lmerTest)
+ anova(mod.1, type = c(III)) # not really an effect
+
+# using parametric bootstrapping
+ PBmodcomp(mod.3, mod.4)
+# overall, there seems to be little reason to reject the Null hypothesis of seed differences in growth rate
+# note, how the bootstrapped p-value is generally larger ! that is, more conservative!
+
+```
+
