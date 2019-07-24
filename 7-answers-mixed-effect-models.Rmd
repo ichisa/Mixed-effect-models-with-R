@@ -20,7 +20,7 @@ Load the data set "farms.txt". In it, the plant size ("size") of plants has been
 You analysed these data last week with a repeated measurements ANOVA.
 
 ```{r}
-farms <- read.delim("farms.txt")
+farms <- read.delim("data/farms.txt")
 head(farms)
 ```
 
@@ -73,6 +73,12 @@ There can be a RS for N for each different farm.
 
 ### Fit with lme4
 
+The following table shows how to specify different models
+
+![](fig/formulas-lmer.PNG)
+
+This table was taken from [GLMM FAQ from Bolker](https://bbolker.github.io/mixedmodels-misc/glmmFAQ.html#introduction)
+
 ```{r}
 library(lme4)
 lmer.1 <- lmer(size ~ N + (N|farm), data=farms)
@@ -94,11 +100,12 @@ The info from this [link from stack exchange](https://stats.stackexchange.com/qu
 
 Here is the model descriptio, not identical to ows case but quite simmilar:
 
- ![](Capture1.PNG){width=800px}
+<!--- ![](Capture1.PNG){width=800px}
+
  
  And here we have som explanation and comparisson with the summary we get:
  
-![](Capture2.PNG)
+<!--- ![](Capture2.PNG)  --->
 
 Owr summary shows something that should be at least distubing. The correlation between the intercept and random slope of the random effects have a correlation of one. This is not good and indicates that there are not enough data to estimate this correlation. There is not enough data to estimate the variation given by N iside each farm. This may occur because there is low variation of plant size for different N.
 
@@ -199,7 +206,7 @@ Load the data set "fertilizer": it describes the height of plants grown from dif
 
 ```{r}
 
-fertilizer <- read.delim("fertilizer.txt")
+fertilizer <- read.delim("data/fertilizer.txt")
 head(fertilizer)
 
 ```
@@ -481,7 +488,7 @@ taken, and two preperations per liver piece were made.
 ### Investigate the data
 
 ```{r}
-rats <- read.delim("rats.txt")
+rats <- read.delim("data/rats.txt")
 head(rats)
 ```
 
@@ -523,7 +530,7 @@ rats %>% ggplot(aes(y=Glycogen, x=Treatment))+
  The exercise does not tell, but of course the same rat can not recieve more than one treatment. There is two rats per treatment. And for each rat there are three measurements because the liver was cuttet in three bits (of course pseudoreplication)
  
  
-![](Capture3.PNG)
+<!--- ![](Capture3.PNG) --->
 
 ### Answer the recipie questions 
 
